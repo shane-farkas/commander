@@ -205,9 +205,10 @@ These are not built yet; contributions and ideas welcome.
 ## Development
 
 ```sh
-cargo build         # debug build
-cargo test          # unit tests (core, ipc)
-cargo run -- tui .  # run the picker standalone
+cargo build                          # debug build (all binaries)
+cargo test                           # unit tests (core, ipc)
+cargo run -- tui .                   # run the picker standalone (plugin binary)
+cargo run -p commander-cockpit -- .  # run the standalone cockpit workbench
 ```
 
 After changing the binary, re-run `cargo install --path .`. Note: a running MCP
