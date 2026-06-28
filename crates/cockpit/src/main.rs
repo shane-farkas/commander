@@ -258,8 +258,14 @@ fn mention_string(paths: &[PathBuf], agent_cwd: &Path) -> String {
     for p in paths {
         let rel = p.strip_prefix(agent_cwd).unwrap_or(p);
         let display = rel.to_string_lossy().replace('\\', "/");
-        out.push('@');
-        out.push_str(&display);
+        // Quote the path when it contains a space so the agent treats it as one
+        // mention rather than several tokens.
+        if display.contains(' ') {
+            out.push_str(&format!("@\"{display}\""));
+        } else {
+            out.push('@');
+            out.push_str(&display);
+        }
         out.push(' ');
     }
     out
@@ -306,6 +312,13 @@ mod tests {
     }
 
     #[test]
+    fn mention_with_space_is_quoted() {
+        let cwd = PathBuf::from(if cfg!(windows) { r"C:\proj" } else { "/proj" });
+        let spaced = cwd.join("my notes.md");
+        assert_eq!(mention_string(&[spaced], &cwd), "@\"my notes.md\" ");
+    }
+
+    #[test]
     fn mention_outside_cwd_stays_absolute() {
         let cwd = PathBuf::from(if cfg!(windows) { r"C:\proj" } else { "/proj" });
         let outside = PathBuf::from(if cfg!(windows) { r"D:\other\x.rs" } else { "/other/x.rs" });
@@ -323,7 +336,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
+        .constraints([Constraint::Percentage(18), Constraint::Percentage(82)])
         .split(rows[0]);
 
     draw_tree(f, cols[0], app);
