@@ -1,0 +1,15 @@
+{
+  "name": "commander-dev",
+  "owner": {
+    "name": "shane",
+    "email": "1642117+shane-farkas@users.noreply.github.com"
+  },
+  "description": "Local dev marketplace for the Commander dual-pane file UI plugin.",
+  "plugins": [
+    {
+      "name": "commander",
+      "source": "./plugins/claude-code",
+      "description": "Midnight Commander-style dual-pane file UI: browse and pick files visually, then hand them to the agent."
+    }
+  ]
+}

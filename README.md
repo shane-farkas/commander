@@ -56,7 +56,7 @@ commander/
 │  ├─ tui/            # ratatui dual-pane UI + keymap
 │  └─ mcp/            # hand-rolled stdio JSON-RPC MCP server
 └─ plugins/
-   ├─ claude-code/    # plugin.json + /commander command + SKILL.md
+   ├─ claude-code/    # plugin.json + /commander:open command + SKILL.md
    ├─ codex/          # (todo) config.toml snippet + skill
    ├─ hermes/         # (todo) plugin manifest
    └─ openclaw/       # (todo) SKILL.md for ClawHub
