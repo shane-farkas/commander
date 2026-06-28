@@ -1,10 +1,9 @@
 {
-  "name": "commander-dev",
+  "name": "commander",
   "owner": {
-    "name": "shane",
-    "email": "1642117+shane-farkas@users.noreply.github.com"
+    "name": "Shane Farkas"
   },
-  "description": "Local dev marketplace for the Commander dual-pane file UI plugin.",
+  "description": "Marketplace for the Commander dual-pane file UI plugin.",
   "plugins": [
     {
       "name": "commander",

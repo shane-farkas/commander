@@ -1,23 +1,98 @@
 # Commander
 
-A Midnight Commander–style dual-pane file UI that plugs into agentic CLIs
-(Claude Code, Codex, Hermes, OpenClaw). You browse and pick files in a real
-terminal TUI; your selection — and an optional action like *review* or
-*explain* — flows back into the agent's context.
+A Midnight Commander–style dual-pane file picker for [Claude Code](https://code.claude.com).
+You browse and mark files in a real terminal TUI; your selection — and an
+optional action like *review* or *explain* — flows straight back into Claude's
+context.
 
-## Why it's one plugin for four hosts
+It's a small Rust binary that ships as a Claude Code plugin (an MCP server + a
+skill + a slash command). The core is deliberately host-agnostic — MCP and
+`SKILL.md` are the two primitives most agent CLIs share — so other hosts can be
+added later, but **today it targets Claude Code.**
 
-All four hosts converge on two extension primitives:
+> Status: early. The select→context loop works and is pleasant to use daily.
+> File operations and other hosts are not built yet — see [Roadmap](#roadmap).
 
-- **MCP** (Model Context Protocol) — the agent-facing control channel. Works
-  everywhere.
-- **Skills** (`SKILL.md`) — the human-facing launcher + "when to use" guidance.
-  Works everywhere, with minor frontmatter dialect differences.
+## Demo
 
-So Commander ships as **one MCP server + one skill**, registered per host. No
-per-host UI code.
+```
+/commander:open
+```
 
-## Architecture
+Opens the picker in a new terminal window. Mark files with **Space**, then press
+**a** (send), **r** (review), or **e** (explain). The picks land back in Claude's
+context and it acts on them.
+
+## Why a separate window?
+
+An agent CLI owns its terminal (raw mode / alternate screen), and any tool it
+spawns gets *piped* stdout, not a real TTY — so a full-screen TUI can't render
+inline. `commander_open` therefore launches the picker in a **new terminal
+window** (`wt.exe` on Windows, your `$TERMINAL` on Unix). The selection returns
+over MCP rather than through that window, so the round trip doesn't depend on
+where the UI is drawn.
+
+## Install
+
+**Prerequisites**
+
+- [Rust](https://rustup.rs) (stable). On Windows you also need the MSVC linker
+  (Visual Studio Build Tools with the *C++ build tools* workload).
+- Claude Code.
+
+**1. Build and install the binary** (puts `commander` on your `PATH` via
+`~/.cargo/bin`):
+
+```sh
+git clone https://github.com/<you>/commander
+cd commander
+cargo install --path .
+```
+
+**2. Add this repo as a plugin marketplace and install the plugin:**
+
+```
+/plugin marketplace add <path-to-clone>
+/plugin install commander@commander
+```
+
+(Or via the CLI: `claude plugin marketplace add <path>` then
+`claude plugin install commander@commander`.)
+
+**3. Restart Claude Code**, then verify the MCP server connected:
+
+```
+/mcp
+```
+
+You should see **commander** with two tools. Now try `/commander:open`.
+
+## Usage
+
+Invoke it explicitly with `/commander:open [directory]`, or just ask in natural
+language ("let me pick some files") — the skill triggers on its own.
+
+`commander_open` **blocks until you confirm or cancel** and returns the selection
+directly, so there's no second step in the normal flow.
+
+### Keymap
+
+| Key | Action |
+|-----|--------|
+| ←/h, →/l, Tab | switch active pane |
+| ↑/k, ↓/j | move cursor |
+| Enter | descend into directory / `..` |
+| Backspace | go up a directory |
+| Space | mark / unmark file or dir |
+| g / G | jump to top / bottom |
+| **a** | send selection (no action) |
+| **r** | send + action `review` |
+| **e** | send + action `explain` |
+| q / Esc | cancel |
+
+If nothing is marked, the item under the cursor is sent.
+
+## How it works
 
 ```
         ┌─────────────────────────────────────────────┐
@@ -28,24 +103,18 @@ per-host UI code.
         └─────────────────────────────────────────────┘
               ▲                              ▲
               │ human keys                   │ agent tool calls
-        new terminal window           Claude Code / Codex /
-        (wt.exe / VSCode term)        Hermes / OpenClaw
+        new terminal window               Claude Code
 ```
 
-- `commander tui [DIR]` — the interactive dual-pane manager.
-- `commander mcp` — the stdio MCP server the host launches.
-- The two share a per-user **session file** (`selection.json`). The TUI writes
-  the user's confirmed selection; the MCP server reads it back when the agent
-  calls `commander_get_selection`.
+- `commander tui [DIR]` — the interactive dual-pane picker.
+- `commander mcp` — a stdio MCP server (hand-rolled JSON-RPC, no SDK dependency)
+  that Claude Code launches.
+- The two share a per-user **session file** (`selection.json` under your local
+  app-data dir). `commander_open` clears it, spawns the TUI, and blocks polling
+  for the confirmed selection; the TUI writes it (or a "cancelled" marker) on
+  exit.
 
-### The terminal-handoff constraint
-
-An agent CLI owns the current terminal (raw mode / alt screen), and tools it
-spawns get *piped* stdout, not a real TTY — so a TUI can't render inline. The
-`commander_open` tool therefore launches the UI in a **new terminal window**;
-selections return over MCP, not the terminal, so it works in every host.
-
-## Workspace layout
+### Workspace layout
 
 ```
 commander/
@@ -56,52 +125,44 @@ commander/
 │  ├─ tui/            # ratatui dual-pane UI + keymap
 │  └─ mcp/            # hand-rolled stdio JSON-RPC MCP server
 └─ plugins/
-   ├─ claude-code/    # plugin.json + /commander:open command + SKILL.md
-   ├─ codex/          # (todo) config.toml snippet + skill
-   ├─ hermes/         # (todo) plugin manifest
-   └─ openclaw/       # (todo) SKILL.md for ClawHub
+   └─ claude-code/    # plugin.json + .mcp.json + /commander:open + SKILL.md
 ```
-
-## Build & run
-
-```sh
-cargo build --release
-# try the UI standalone:
-./target/release/commander tui .
-# run the MCP server (a host normally launches this):
-./target/release/commander mcp
-```
-
-Put `commander` on your `PATH` (or edit the plugin manifest to use an absolute
-path) so the host can launch it.
-
-## TUI keymap
-
-| Key | Action |
-|-----|--------|
-| ←/h, →/l, Tab | switch active pane |
-| ↑/k, ↓/j | move cursor |
-| Enter | descend into dir / `..` |
-| Backspace | go up a directory |
-| Space | mark/unmark file or dir |
-| g / G | jump to top / bottom |
-| **a** | send selection (no action) |
-| **r** | send + action `review` |
-| **e** | send + action `explain` |
-| q / Esc | cancel |
 
 ## MCP tools
 
-- `commander_open(path?)` — open the UI in a new window.
-- `commander_get_selection(clear?)` — return `{ cwd, paths, action }` the user
-  confirmed; clears the pending selection by default.
+- `commander_open(path?)` — open the picker and block until the user confirms;
+  returns `{ cwd, paths, action }`.
+- `commander_get_selection(clear?)` — fallback to read the last selection (only
+  needed if `commander_open` times out).
 
-## Status
+## Configuration
 
-Milestone 1 (this scaffold): dual-pane browse + mark, select→context round trip,
-Claude Code plugin. Next: agent-driven navigation (live socket + `NavCommand`),
-file operations (copy/move/delete/view), and the Codex/Hermes/OpenClaw manifests.
+- `COMMANDER_OPEN_TIMEOUT` — seconds `commander_open` waits for confirmation
+  (default `300`).
+
+## Roadmap
+
+- File operations (copy / move / delete / view / mkdir).
+- Agent-driven navigation (the agent moves the panes; live socket transport —
+  the `NavCommand` types are already defined).
+- Additional hosts (Codex, Hermes, OpenClaw) via the same MCP + skill core.
+
+These are not built yet; contributions and ideas welcome.
+
+## Development
+
+```sh
+cargo build         # debug build
+cargo test          # unit tests (core, ipc)
+cargo run -- tui .  # run the picker standalone
+```
+
+After changing the binary, re-run `cargo install --path .`. Note: the running
+MCP server locks `commander.exe` on Windows — stop it (or restart Claude Code)
+before reinstalling. After changing plugin files, bump the version in
+`plugins/claude-code/.claude-plugin/plugin.json` and reinstall the plugin so the
+cached copy refreshes.
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -1,6 +1,6 @@
 {
   "name": "commander",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Midnight Commander-style dual-pane file UI. Browse and pick files visually, then hand them to the agent.",
-  "author": { "name": "shane" }
+  "author": { "name": "Shane Farkas" }
 }
