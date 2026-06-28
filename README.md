@@ -1,17 +1,27 @@
 # Commander
 
-A Midnight Commander–style dual-pane file picker for [Claude Code](https://code.claude.com).
-You browse and mark files in a real terminal TUI; your selection — and an
-optional action like *review* or *explain* — flows straight back into Claude's
-context.
+A Midnight Commander–style dual-pane file picker for terminal coding agents
+([Claude Code](https://code.claude.com), [OpenAI Codex](https://developers.openai.com/codex),
+and [Grok Build](https://x.ai/cli)). You browse and mark files in a real terminal
+TUI; your selection — and an optional action like *review* or *explain* — flows
+straight back into the agent's context.
 
-It's a small Rust binary that ships as a Claude Code plugin (an MCP server + a
-skill + a slash command). The core is deliberately host-agnostic — MCP and
-`SKILL.md` are the two primitives most agent CLIs share — so other hosts can be
-added later, but **today it targets Claude Code.**
+It's a small Rust binary that exposes an MCP server plus a `SKILL.md` — the two
+primitives these agents share — so the **same binary** works across hosts; only
+the registration differs.
 
-> Status: early. The select→context loop works and is pleasant to use daily.
-> File operations and other hosts are not built yet — see [Roadmap](#roadmap).
+## Supported hosts
+
+| Host | Status | Install |
+|------|--------|---------|
+| Claude Code | primary, used daily | [below](#install) |
+| OpenAI Codex | port provided | [plugins/codex](plugins/codex/README.md) |
+| Grok Build (xAI) | port provided | [plugins/grok](plugins/grok/README.md) |
+
+> Status: early. The select→context loop works and is pleasant to use daily on
+> Claude Code. The Codex and Grok ports share the identical binary and skill; the
+> registration is documented per host. File operations and richer features are
+> still ahead — see [Roadmap](#roadmap).
 
 ## Demo
 
@@ -125,7 +135,9 @@ commander/
 │  ├─ tui/            # ratatui dual-pane UI + keymap
 │  └─ mcp/            # hand-rolled stdio JSON-RPC MCP server
 └─ plugins/
-   └─ claude-code/    # plugin.json + .mcp.json + /commander:open + SKILL.md
+   ├─ claude-code/    # plugin.json + .mcp.json + /commander:open + SKILL.md
+   ├─ codex/          # config.toml (mcp_servers) + SKILL.md + install README
+   └─ grok/           # grok mcp add + SKILL.md + install README
 ```
 
 ## MCP tools
@@ -145,7 +157,9 @@ commander/
 - File operations (copy / move / delete / view / mkdir).
 - Agent-driven navigation (the agent moves the panes; live socket transport —
   the `NavCommand` types are already defined).
-- Additional hosts (Codex, Hermes, OpenClaw) via the same MCP + skill core.
+- Inline picker via `tmux split-window` when run inside tmux (instead of a
+  separate window).
+- More hosts via the same MCP + skill core.
 
 These are not built yet; contributions and ideas welcome.
 

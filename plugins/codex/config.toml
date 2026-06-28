@@ -1,0 +1,16 @@
+# Commander MCP server for OpenAI Codex.
+#
+# Merge this block into your Codex config at ~/.codex/config.toml
+# (global) or .codex/config.toml (per-project, trusted projects only).
+# Equivalent CLI: `codex mcp add commander -- commander mcp`
+#
+# `commander` must be on your PATH (e.g. `cargo install --path .` puts it in
+# ~/.cargo/bin). tool_timeout_sec is set high because commander_open blocks
+# while the user picks files; the server itself returns after
+# COMMANDER_OPEN_TIMEOUT (default 300s).
+
+[mcp_servers.commander]
+command = "commander"
+args = ["mcp"]
+startup_timeout_sec = 20
+tool_timeout_sec = 600
