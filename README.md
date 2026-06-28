@@ -95,9 +95,12 @@ Start Codex, confirm the server's tools appear, then ask to "pick some files."
 Register the MCP server:
 
 ```sh
-grok mcp add commander -t stdio -c commander -a mcp
-grok mcp list            # confirm it registered
+grok mcp add commander commander mcp   # NAME, then the command + args
+grok mcp list                          # confirm it registered
 ```
+
+(If your build complains about argument parsing, use the explicit separator:
+`grok mcp add commander -- commander mcp`.)
 
 Install the skill (Grok recognizes the Anthropic `SKILL.md` format):
 
