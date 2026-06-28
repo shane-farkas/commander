@@ -14,7 +14,8 @@
 //!   Ctrl-T          new tab (rooted at the current tree folder)
 //!   Ctrl-W          close the current tab
 //!   Ctrl-PageUp/Dn  previous / next tab
-//!   Shift-PageUp/Dn scroll the dock (when dock focused)
+//!   Alt-PageUp/Dn   scroll the dock (shell-style output; full-screen agents
+//!                   scroll themselves)
 //!   tree focused:   ↑/k ↓/j move, Space mark, Enter open dir / send file(s),
 //!                   Backspace up, q quit
 //!   dock focused:   every other key goes to the agent
@@ -306,10 +307,12 @@ fn handle_key(key: KeyEvent, app: &mut App) -> bool {
     let ws = app.ws_mut();
     match ws.focus {
         Focus::Dock => {
-            let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+            // Alt (not Shift): Windows Terminal reserves Shift+PageUp/Down for
+            // its own scrollback, so those never reach us.
+            let alt = key.modifiers.contains(KeyModifiers::ALT);
             match key.code {
-                KeyCode::PageUp if shift => ws.dock.scroll_page_up(),
-                KeyCode::PageDown if shift => ws.dock.scroll_page_down(),
+                KeyCode::PageUp if alt => ws.dock.scroll_page_up(),
+                KeyCode::PageDown if alt => ws.dock.scroll_page_down(),
                 _ => {
                     ws.dock.scroll_reset();
                     if let Some(bytes) = key_to_bytes(key) {
@@ -475,7 +478,7 @@ fn draw_status(f: &mut Frame, area: Rect, ws: &Workspace) {
             format!("Ctrl-O dock · Ctrl-T/W tab · Space mark · {sel} · q quit · {}{}", ws.dock.program, exited)
         }
         Focus::Dock => format!(
-            "Ctrl-O tree · Ctrl-T/W tab · Ctrl-PgUp/Dn switch · Shift-PgUp/Dn scroll{} · keys → {}{}",
+            "Ctrl-O tree · Ctrl-T/W tab · Ctrl-PgUp/Dn switch · Alt-PgUp/Dn scroll{} · keys → {}{}",
             if ws.dock.is_scrolled() { " [SCROLLED]" } else { "" },
             ws.dock.program,
             exited
