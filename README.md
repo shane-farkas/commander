@@ -44,7 +44,7 @@ where the UI is drawn.
 `~/.cargo/bin`):
 
 ```sh
-git clone https://github.com/<you>/commander
+git clone https://github.com/shane-farkas/commander
 cd commander
 cargo install --path .
 ```
@@ -52,11 +52,11 @@ cargo install --path .
 **2. Add this repo as a plugin marketplace and install the plugin:**
 
 ```
-/plugin marketplace add <path-to-clone>
+/plugin marketplace add ./commander
 /plugin install commander@commander
 ```
 
-(Or via the CLI: `claude plugin marketplace add <path>` then
+(Or via the CLI: `claude plugin marketplace add ./commander` then
 `claude plugin install commander@commander`.)
 
 **3. Restart Claude Code**, then verify the MCP server connected:
