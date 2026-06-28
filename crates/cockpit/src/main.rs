@@ -10,8 +10,12 @@
 //! Keys:
 //!   Ctrl-O   toggle focus (tree <-> dock)
 //!   Ctrl-Q   quit the cockpit
-//!   tree focused:  ↑/k ↓/j move, Enter open, Backspace up, q quit
+//!   tree focused:  ↑/k ↓/j move, Space mark, Enter open dir / send file(s),
+//!                  Backspace up, q quit
 //!   dock focused:  every other key goes to the agent (Tab, Ctrl-C, ...)
+//!
+//! "Send" types the selected paths into the dock as `@path` mentions (no
+//! newline) and focuses the dock, so you add your instruction and submit.
 
 mod dock;
 
@@ -42,6 +46,9 @@ struct App {
     tree: Pane,
     dock: Dock,
     focus: Focus,
+    /// The directory the agent was launched in; `@` mentions are made relative
+    /// to it so they match what the agent sees.
+    agent_cwd: PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -106,12 +113,16 @@ fn run_loop(
     program: &str,
 ) -> Result<()> {
     let tree = Pane::open(start)?;
+    // Capture the canonical launch dir before any navigation; this matches the
+    // agent's working directory for relative `@` mentions.
+    let agent_cwd = tree.cwd.clone();
     // Spawn with a placeholder size; the first draw resizes it to the real pane.
     let dock = Dock::spawn(program, start, 24, 80)?;
     let mut app = App {
         tree,
         dock,
         focus: Focus::Dock,
+        agent_cwd,
     };
 
     let result = loop {
@@ -160,8 +171,16 @@ fn handle_key(key: KeyEvent, app: &mut App) -> bool {
         Focus::Tree => match key.code {
             KeyCode::Up | KeyCode::Char('k') => app.tree.move_cursor(-1),
             KeyCode::Down | KeyCode::Char('j') => app.tree.move_cursor(1),
+            KeyCode::Char(' ') => app.tree.toggle_mark(),
             KeyCode::Enter => {
-                let _ = app.tree.enter();
+                // Marks take priority (send them). Otherwise open a directory,
+                // or send the file under the cursor.
+                let on_dir = app.tree.current().map(|e| e.is_dir).unwrap_or(false);
+                if app.tree.marked.is_empty() && on_dir {
+                    let _ = app.tree.enter();
+                } else {
+                    send_files(app);
+                }
             }
             KeyCode::Backspace => {
                 let _ = app.tree.ascend();
@@ -216,6 +235,36 @@ fn char_bytes(c: char) -> Vec<u8> {
     c.encode_utf8(&mut tmp).as_bytes().to_vec()
 }
 
+/// Send the tree's selection (marked files, or the file under the cursor) into
+/// the dock as `@path` mentions, then focus the dock so the user can add their
+/// instruction. Clears the marks afterward.
+fn send_files(app: &mut App) {
+    let paths = app.tree.effective_selection();
+    if paths.is_empty() {
+        return;
+    }
+    let text = mention_string(&paths, &app.agent_cwd);
+    app.dock.send(text.as_bytes());
+    app.tree.marked.clear();
+    app.focus = Focus::Dock;
+}
+
+/// Build a space-separated list of `@path` mentions, relative to `agent_cwd`
+/// when the path is under it (absolute otherwise), with forward slashes so the
+/// agent parses them cleanly. Trailing space and no newline: the user types
+/// their instruction next and submits it themselves.
+fn mention_string(paths: &[PathBuf], agent_cwd: &Path) -> String {
+    let mut out = String::new();
+    for p in paths {
+        let rel = p.strip_prefix(agent_cwd).unwrap_or(p);
+        let display = rel.to_string_lossy().replace('\\', "/");
+        out.push('@');
+        out.push_str(&display);
+        out.push(' ');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +297,22 @@ mod tests {
         assert_eq!(key_to_bytes(k(KeyCode::Up, false)), Some(b"\x1b[A".to_vec()));
         assert_eq!(key_to_bytes(k(KeyCode::Left, false)), Some(b"\x1b[D".to_vec()));
     }
+
+    #[test]
+    fn mentions_are_relative_and_forward_slashed() {
+        let cwd = PathBuf::from(if cfg!(windows) { r"C:\proj" } else { "/proj" });
+        let under = cwd.join("src").join("main.rs");
+        assert_eq!(mention_string(&[under], &cwd), "@src/main.rs ");
+    }
+
+    #[test]
+    fn mention_outside_cwd_stays_absolute() {
+        let cwd = PathBuf::from(if cfg!(windows) { r"C:\proj" } else { "/proj" });
+        let outside = PathBuf::from(if cfg!(windows) { r"D:\other\x.rs" } else { "/other/x.rs" });
+        let s = mention_string(&[outside], &cwd);
+        assert!(s.starts_with('@') && s.ends_with(' '));
+        assert!(s.contains("x.rs"));
+    }
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
@@ -264,15 +329,22 @@ fn draw(f: &mut Frame, app: &mut App) {
     draw_tree(f, cols[0], app);
     draw_dock(f, cols[1], app);
 
-    let hint = format!(
-        "Ctrl-O switch focus · Ctrl-Q quit · focus: {} · dock: {}{}",
-        match app.focus {
-            Focus::Tree => "tree",
-            Focus::Dock => "dock",
-        },
-        app.dock.program,
-        if app.dock.is_alive() { "" } else { " [exited]" },
-    );
+    let exited = if app.dock.is_alive() { "" } else { " [exited]" };
+    let hint = match app.focus {
+        Focus::Tree => {
+            let n = app.tree.marked.len();
+            let sel = if n > 0 {
+                format!("Enter send {n} marked")
+            } else {
+                "Enter open/send".to_string()
+            };
+            format!("Ctrl-O dock · Space mark · {sel} · Backspace up · q quit · dock: {}{}", app.dock.program, exited)
+        }
+        Focus::Dock => format!(
+            "Ctrl-O tree · Ctrl-Q quit · keys → {}{}",
+            app.dock.program, exited
+        ),
+    };
     f.render_widget(
         Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
         rows[1],
@@ -291,6 +363,7 @@ fn draw_tree(f: &mut Frame, area: Rect, app: &App) {
         .entries
         .iter()
         .map(|e| {
+            let marked = app.tree.is_marked(&e.path);
             let glyph = if e.name == ".." {
                 "↑"
             } else if e.is_dir {
@@ -298,11 +371,15 @@ fn draw_tree(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 " "
             };
+            let mark = if marked { "*" } else { " " };
             let mut style = Style::default();
             if e.is_dir {
                 style = style.fg(Color::Blue).add_modifier(Modifier::BOLD);
             }
-            ListItem::new(format!("{glyph} {}", e.name)).style(style)
+            if marked {
+                style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            }
+            ListItem::new(format!("{mark}{glyph} {}", e.name)).style(style)
         })
         .collect();
 
