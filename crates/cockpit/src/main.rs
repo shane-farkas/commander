@@ -20,11 +20,12 @@
 //!   dock focused:   every other key goes to the agent
 
 mod dock;
+mod git;
 
 use std::io::{self, Stdout};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use commander_core::Pane;
@@ -53,6 +54,9 @@ struct Workspace {
     focus: Focus,
     /// Short folder name shown on the tab.
     label: String,
+    /// Cached git status of the repo, refreshed on an interval.
+    git: git::GitStatus,
+    last_git: Instant,
 }
 
 impl Workspace {
@@ -64,13 +68,25 @@ impl Workspace {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| agent_cwd.to_string_lossy().into_owned());
+        let git = git::GitStatus::load(&agent_cwd);
         Ok(Workspace {
             tree,
             dock,
             agent_cwd,
             focus: Focus::Dock,
             label,
+            git,
+            last_git: Instant::now(),
         })
+    }
+
+    /// Reload git status if the cache is stale (cheap interval check; the reload
+    /// itself shells out, so we keep the interval coarse).
+    fn refresh_git_if_stale(&mut self) {
+        if self.last_git.elapsed() >= Duration::from_millis(2000) {
+            self.git = git::GitStatus::load(&self.agent_cwd);
+            self.last_git = Instant::now();
+        }
     }
 }
 
@@ -232,6 +248,7 @@ fn run_loop(
     };
 
     let result = loop {
+        app.ws_mut().refresh_git_if_stale();
         terminal.draw(|f| draw(f, &mut app))?;
 
         if !event::poll(Duration::from_millis(50))? {
@@ -491,14 +508,30 @@ fn draw_tree(f: &mut Frame, area: Rect, ws: &Workspace) {
                 " "
             };
             let mark = if marked { "*" } else { " " };
-            let mut style = Style::default();
+
+            // Git status: a colored single-char column.
+            let (git_char, git_color) = match ws.git.file_status(&e.path) {
+                Some(git::Status::Untracked) => ("?", Color::Red),
+                Some(git::Status::Staged) => ("+", Color::Green),
+                Some(git::Status::Modified) => ("M", Color::Yellow),
+                None if e.is_dir && ws.git.dir_has_changes(&e.path) => ("·", Color::DarkGray),
+                None => (" ", Color::Reset),
+            };
+
+            let mut name_style = Style::default();
             if e.is_dir {
-                style = style.fg(Color::Blue).add_modifier(Modifier::BOLD);
+                name_style = name_style.fg(Color::Blue).add_modifier(Modifier::BOLD);
             }
             if marked {
-                style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                name_style = name_style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
             }
-            ListItem::new(format!("{mark}{glyph} {}", e.name)).style(style)
+
+            let line = Line::from(vec![
+                Span::raw(mark),
+                Span::styled(git_char, Style::default().fg(git_color)),
+                Span::styled(format!("{glyph} {}", e.name), name_style),
+            ]);
+            ListItem::new(line)
         })
         .collect();
 
