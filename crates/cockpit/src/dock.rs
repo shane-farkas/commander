@@ -29,8 +29,17 @@ pub struct Dock {
 }
 
 impl Dock {
-    /// Spawn `program` in a PTY rooted at `cwd`, sized `rows` x `cols`.
-    pub fn spawn(program: &str, cwd: &Path, rows: u16, cols: u16) -> Result<Dock> {
+    /// Spawn `exec` (with `args`) in a PTY rooted at `cwd`, sized `rows` x
+    /// `cols`. `label` is what shows in the title (e.g. "claude" even when
+    /// `exec` is `cmd.exe /c claude`).
+    pub fn spawn(
+        exec: &str,
+        args: &[String],
+        label: &str,
+        cwd: &Path,
+        rows: u16,
+        cols: u16,
+    ) -> Result<Dock> {
         let rows = rows.max(1);
         let cols = cols.max(1);
 
@@ -39,7 +48,10 @@ impl Dock {
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .context("openpty")?;
 
-        let mut cmd = CommandBuilder::new(program);
+        let mut cmd = CommandBuilder::new(exec);
+        for a in args {
+            cmd.arg(a);
+        }
         cmd.cwd(cwd);
         // Propagate the environment so PATH (and thus `claude`/`codex`/`grok`)
         // resolves, and advertise a capable terminal.
@@ -51,7 +63,7 @@ impl Dock {
         let child = pair
             .slave
             .spawn_command(cmd)
-            .with_context(|| format!("spawning '{program}'"))?;
+            .with_context(|| format!("spawning '{label}'"))?;
         // Drop the slave so the child sees EOF / we get a clean exit signal.
         drop(pair.slave);
 
@@ -88,7 +100,7 @@ impl Dock {
             child,
             alive,
             size: (rows, cols),
-            program: program.to_string(),
+            program: label.to_string(),
         })
     }
 

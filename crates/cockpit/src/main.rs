@@ -77,12 +77,57 @@ fn run() -> Result<()> {
         Some(d) => PathBuf::from(d),
         None => std::env::current_dir()?,
     };
-    let program = agent.unwrap_or_else(default_shell);
+    let launch = resolve_launch(agent);
 
     let mut terminal = setup_terminal()?;
-    let result = run_loop(&mut terminal, &start, &program);
+    let result = run_loop(&mut terminal, &start, &launch);
     restore_terminal(&mut terminal)?;
     result
+}
+
+/// What the dock actually runs: an executable, its args, and a display label.
+struct Launch {
+    exec: String,
+    args: Vec<String>,
+    label: String,
+}
+
+/// Resolve `--agent <cmd>` (or the default shell) into something spawnable.
+///
+/// On Windows, an agent like `claude` is usually an npm `.cmd` shim or a script,
+/// which `CreateProcessW` can't launch directly, so route it through
+/// `cmd.exe /c <agent>` (cmd resolves the shim via PATHEXT). The default shell
+/// is a real binary and spawns directly.
+fn resolve_launch(agent: Option<String>) -> Launch {
+    match agent {
+        Some(cmd) => {
+            if cfg!(windows) {
+                Launch {
+                    exec: "cmd.exe".to_string(),
+                    args: vec!["/c".to_string(), cmd.clone()],
+                    label: cmd,
+                }
+            } else {
+                Launch {
+                    exec: cmd.clone(),
+                    args: Vec::new(),
+                    label: cmd,
+                }
+            }
+        }
+        None => {
+            let shell = default_shell();
+            let label = Path::new(&shell)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| shell.clone());
+            Launch {
+                exec: shell,
+                args: Vec::new(),
+                label,
+            }
+        }
+    }
 }
 
 fn default_shell() -> String {
@@ -110,14 +155,14 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     start: &Path,
-    program: &str,
+    launch: &Launch,
 ) -> Result<()> {
     let tree = Pane::open(start)?;
     // Capture the canonical launch dir before any navigation; this matches the
     // agent's working directory for relative `@` mentions.
     let agent_cwd = tree.cwd.clone();
     // Spawn with a placeholder size; the first draw resizes it to the real pane.
-    let dock = Dock::spawn(program, start, 24, 80)?;
+    let dock = Dock::spawn(&launch.exec, &launch.args, &launch.label, start, 24, 80)?;
     let mut app = App {
         tree,
         dock,
