@@ -138,7 +138,10 @@ impl Dock {
     /// Scroll the view up/down by half a page through the scrollback buffer.
     pub fn scroll_page_up(&mut self) {
         let page = (self.size.0 as usize / 2).max(1);
-        self.scroll = (self.scroll + page).min(SCROLLBACK_LEN);
+        // vt100 0.15.2's visible_rows() underflows if the scrollback offset
+        // exceeds the visible row count, so cap one screen back.
+        let cap = self.size.0.saturating_sub(1) as usize;
+        self.scroll = (self.scroll + page).min(cap);
     }
 
     pub fn scroll_page_down(&mut self) {
