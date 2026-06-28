@@ -1,11 +1,15 @@
 ---
 name: commander
 description: >
-  Use when the user wants to visually browse the filesystem or pick files/folders
-  to work on, rather than naming paths by hand. Opens a Midnight Commander-style
-  dual-pane file UI in a new terminal window; the user marks files and the
-  selection flows back to you. Triggers: "let me pick the files", "open a file
-  browser", "show me a file picker", "I'll choose what to work on".
+  Open the Commander visual file picker. Use this WHENEVER the user wants to see,
+  browse, explore, or choose files or folders, or asks for a file manager or file
+  explorer, instead of guessing paths or listing files as text. Phrases that
+  should trigger it include: "show me files", "show me the files", "let me pick
+  files", "open a file browser", "file explorer", "browse the project", "I'll
+  choose what to work on", "select files for context". It opens a Midnight
+  Commander style dual-pane UI in a new terminal window; the user marks files and
+  the selection (with an optional review or explain action) returns to you via the
+  commander_open tool.
 ---
 
 # Commander — visual file picker for the agent
