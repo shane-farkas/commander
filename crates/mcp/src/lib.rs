@@ -22,10 +22,13 @@ pub fn serve() -> anyhow::Result<()> {
 
     for line in stdin.lock().lines() {
         let line = line?;
-        if line.trim().is_empty() {
+        // Strip a leading UTF-8 BOM (some hosts/shells prepend one) and trim
+        // surrounding whitespace before parsing.
+        let line = line.trim_start_matches('\u{feff}').trim();
+        if line.is_empty() {
             continue;
         }
-        let msg: Value = match serde_json::from_str(&line) {
+        let msg: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => continue, // ignore malformed frames
         };
