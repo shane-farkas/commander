@@ -1,12 +1,6 @@
 {
   "name": "commander",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Midnight Commander-style dual-pane file UI. Browse and pick files visually, then hand them to the agent.",
-  "author": { "name": "shane" },
-  "mcpServers": {
-    "commander": {
-      "command": "commander",
-      "args": ["mcp"]
-    }
-  }
+  "author": { "name": "shane" }
 }
