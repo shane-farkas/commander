@@ -1,0 +1,12 @@
+[package]
+name = "commander-tui"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+commander-core = { workspace = true }
+commander-ipc = { workspace = true }
