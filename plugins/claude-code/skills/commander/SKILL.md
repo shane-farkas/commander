@@ -25,12 +25,15 @@ the user drives, handing their selection back to you through MCP.
 
 1. Call `commander_open` (optionally with a `path` to root the panes at). This
    spawns the UI in a **new terminal window** — the current chat terminal is not
-   taken over.
+   taken over — and **blocks until the user confirms or cancels**, then returns
+   structured `{ cwd, paths, action }` directly.
 2. The user browses: arrows to move, **Space** to mark files, **Enter** to
    descend, **Backspace** to go up. They confirm with **a** (send), **r**
    (review), or **e** (explain), or quit with **q**.
-3. Call `commander_get_selection` to retrieve the confirmed paths and the chosen
-   action. It returns structured `{ cwd, paths, action }`.
+3. You normally do **not** need `commander_get_selection` — `commander_open`
+   already returns the selection. Only use `commander_get_selection` as a
+   fallback if `commander_open` reports a timeout (the user took too long) and
+   the picker is still open.
 
 ## After you get a selection
 

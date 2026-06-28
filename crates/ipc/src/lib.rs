@@ -16,9 +16,26 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// What the human picked in the TUI and handed back to the agent.
+/// How a TUI session ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    /// The human confirmed a selection.
+    #[default]
+    Sent,
+    /// The human quit without sending.
+    Cancelled,
+}
+
+/// What the human picked in the TUI and handed back to the agent. Written on
+/// *every* TUI exit (a cancel writes `status: cancelled` with no paths) so a
+/// waiting reader always unblocks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Selection {
+    /// How the session ended. Defaults to `Sent` for backward compatibility
+    /// with files written before this field existed.
+    #[serde(default)]
+    pub status: Status,
     /// Working directory the panes were rooted at when confirmed.
     pub cwd: PathBuf,
     /// Absolute paths the human marked (or the cursor path if none marked).
@@ -107,6 +124,28 @@ pub fn read_selection() -> Result<Option<Selection>> {
         Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+/// Block until a selection newer than `since_ms` is written, or until `timeout`
+/// elapses. Polls the session file a few times a second. Returns `Ok(None)` on
+/// timeout. Intended for `commander_open` to wait on the human's confirmation.
+pub fn wait_for_outcome(
+    since_ms: u128,
+    timeout: std::time::Duration,
+) -> Result<Option<Selection>> {
+    let start = std::time::Instant::now();
+    let poll = std::time::Duration::from_millis(150);
+    loop {
+        if let Some(sel) = read_selection()? {
+            if sel.submitted_at_ms >= since_ms {
+                return Ok(Some(sel));
+            }
+        }
+        if start.elapsed() >= timeout {
+            return Ok(None);
+        }
+        std::thread::sleep(poll);
     }
 }
 

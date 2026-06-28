@@ -74,9 +74,11 @@ fn tool_defs() -> Value {
         {
             "name": "commander_open",
             "description": "Open the Commander dual-pane file UI in a new terminal window so the \
-                user can browse and pick files/dirs. Call this when the user wants to choose \
-                files visually. After they confirm in the UI, call commander_get_selection to \
-                retrieve what they picked.",
+                user can browse and pick files/dirs, and BLOCK until they confirm or cancel. \
+                Returns the selected paths and chosen action directly — you normally do NOT \
+                need to call commander_get_selection afterward. Call this when the user wants \
+                to choose files visually. If it reports a timeout, the picker is still open; \
+                call commander_get_selection once the user says they've confirmed.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -122,13 +124,32 @@ fn tool_open(args: &Value) -> anyhow::Result<Value> {
         .map(PathBuf::from)
         .unwrap_or(std::env::current_dir()?);
 
+    // Clear any stale outcome and remember when we started, so we only accept a
+    // confirmation made during *this* session.
+    commander_ipc::clear_selection()?;
+    let started = commander_ipc::now_ms();
     spawn_tui(&start_dir)?;
-    Ok(text_result(&format!(
-        "Opened Commander at {}. Ask the user to browse, mark files with Space, then press \
-         'a' (send), 'r' (review), or 'e' (explain). Once they confirm, call \
-         commander_get_selection.",
-        start_dir.display()
-    )))
+
+    // Block until the user confirms or cancels in the TUI (or we time out).
+    let timeout = std::time::Duration::from_secs(open_timeout_secs());
+    match commander_ipc::wait_for_outcome(started, timeout)? {
+        None => Ok(text_result(&format!(
+            "Opened Commander at {} but the user hasn't confirmed within {}s. The picker may \
+             still be open — call commander_get_selection once they confirm.",
+            start_dir.display(),
+            timeout.as_secs()
+        ))),
+        Some(sel) => {
+            commander_ipc::clear_selection()?;
+            if sel.status == commander_ipc::Status::Cancelled {
+                Ok(text_result(
+                    "The user closed the Commander picker without selecting anything.",
+                ))
+            } else {
+                Ok(selection_result(&sel))
+            }
+        }
+    }
 }
 
 fn tool_get_selection(args: &Value) -> anyhow::Result<Value> {
@@ -141,28 +162,48 @@ fn tool_get_selection(args: &Value) -> anyhow::Result<Value> {
             if clear {
                 commander_ipc::clear_selection()?;
             }
-            let paths: Vec<String> = sel.paths.iter().map(|p| p.display().to_string()).collect();
-            let summary = format!(
-                "User selected {} item(s){} from {}:\n{}",
-                paths.len(),
-                sel.action
-                    .as_ref()
-                    .map(|a| format!(" with action '{a}'"))
-                    .unwrap_or_default(),
-                sel.cwd.display(),
-                paths.join("\n")
-            );
-            // Return both a human-readable text block and a structured payload.
-            Ok(json!({
-                "content": [{ "type": "text", "text": summary }],
-                "structuredContent": {
-                    "cwd": sel.cwd,
-                    "paths": sel.paths,
-                    "action": sel.action
-                }
-            }))
+            if sel.status == commander_ipc::Status::Cancelled {
+                Ok(text_result(
+                    "The user closed the Commander picker without selecting anything.",
+                ))
+            } else {
+                Ok(selection_result(&sel))
+            }
         }
     }
+}
+
+/// Format a confirmed selection as an MCP tool result: a human-readable text
+/// block plus a structured payload the agent can consume directly.
+fn selection_result(sel: &commander_ipc::Selection) -> Value {
+    let paths: Vec<String> = sel.paths.iter().map(|p| p.display().to_string()).collect();
+    let summary = format!(
+        "User selected {} item(s){} from {}:\n{}",
+        paths.len(),
+        sel.action
+            .as_ref()
+            .map(|a| format!(" with action '{a}'"))
+            .unwrap_or_default(),
+        sel.cwd.display(),
+        paths.join("\n")
+    );
+    json!({
+        "content": [{ "type": "text", "text": summary }],
+        "structuredContent": {
+            "cwd": sel.cwd,
+            "paths": sel.paths,
+            "action": sel.action
+        }
+    })
+}
+
+/// How long `commander_open` waits for the user to confirm, in seconds.
+/// Override with `COMMANDER_OPEN_TIMEOUT`. Default 300s (5 min).
+fn open_timeout_secs() -> u64 {
+    std::env::var("COMMANDER_OPEN_TIMEOUT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300)
 }
 
 fn text_result(text: &str) -> Value {

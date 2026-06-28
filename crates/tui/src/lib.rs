@@ -85,7 +85,10 @@ fn run_loop(
 
         match handle_key(key, &mut app, &mut status)? {
             Flow::Continue => {}
-            Flow::Quit => return Ok(Outcome::Cancelled),
+            Flow::Quit => {
+                write_cancelled(&app);
+                return Ok(Outcome::Cancelled);
+            }
             Flow::Send(action) => {
                 let count = confirm(&app, action.clone())?;
                 return Ok(Outcome::Sent { count, action });
@@ -141,6 +144,7 @@ fn confirm(app: &AppState, action: Option<String>) -> Result<usize> {
     let pane = app.active_pane();
     let paths = pane.effective_selection();
     let sel = Selection {
+        status: commander_ipc::Status::Sent,
         cwd: pane.cwd.clone(),
         paths: paths.clone(),
         action,
@@ -148,6 +152,20 @@ fn confirm(app: &AppState, action: Option<String>) -> Result<usize> {
     };
     commander_ipc::write_selection(&sel)?;
     Ok(paths.len())
+}
+
+/// Write a `Cancelled` outcome so a waiting `commander_open` returns promptly
+/// instead of polling until timeout.
+fn write_cancelled(app: &AppState) {
+    let sel = Selection {
+        status: commander_ipc::Status::Cancelled,
+        cwd: app.active_pane().cwd.clone(),
+        paths: Vec::new(),
+        action: None,
+        submitted_at_ms: now_ms(),
+    };
+    // Best-effort: cancelling shouldn't fail the whole session on a write error.
+    let _ = commander_ipc::write_selection(&sel);
 }
 
 fn draw(f: &mut Frame, app: &AppState, status: &str) {
