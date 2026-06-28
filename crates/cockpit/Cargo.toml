@@ -14,3 +14,5 @@ anyhow = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 commander-core = { workspace = true }
+portable-pty = "0.8"
+vt100 = "0.15"
