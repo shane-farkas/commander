@@ -170,7 +170,11 @@ impl Dock {
     /// cursor position if it should be drawn.
     pub fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
         let mut guard = self.parser.lock().ok()?;
-        guard.set_scrollback(self.scroll);
+        // Clamp to the visible rows at the moment of render: vt100 0.15.2's
+        // visible_rows() does rows_len - offset and underflows if the offset
+        // exceeds the current row count (e.g. after the pane shrank).
+        let max_scroll = area.height.saturating_sub(1) as usize;
+        guard.set_scrollback(self.scroll.min(max_scroll));
         let screen = guard.screen();
         for row in 0..area.height {
             for col in 0..area.width {
