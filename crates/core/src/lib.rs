@@ -48,9 +48,10 @@ impl Pane {
     /// Open `cwd` and read its entries. The cursor starts at the top.
     pub fn open(cwd: impl AsRef<Path>) -> Result<Pane> {
         let cwd = cwd.as_ref();
-        let cwd = cwd
-            .canonicalize()
-            .with_context(|| format!("resolving {}", cwd.display()))?;
+        let cwd = simplify(
+            cwd.canonicalize()
+                .with_context(|| format!("resolving {}", cwd.display()))?,
+        );
         let mut pane = Pane {
             cwd,
             entries: Vec::new(),
@@ -147,10 +148,13 @@ impl Pane {
             return Ok(());
         }
         let target = entry.path.clone();
-        // Canonicalize so ".." collapses cleanly.
-        let target = target
-            .canonicalize()
-            .with_context(|| format!("resolving {}", target.display()))?;
+        // Canonicalize so ".." collapses cleanly, then strip any Windows
+        // verbatim prefix so downstream paths stay tool-friendly.
+        let target = simplify(
+            target
+                .canonicalize()
+                .with_context(|| format!("resolving {}", target.display()))?,
+        );
         self.cwd = target;
         self.cursor = 0;
         self.reload()
@@ -194,6 +198,23 @@ impl Pane {
             _ => Vec::new(),
         }
     }
+}
+
+/// Strip the Windows verbatim path prefix (`\\?\`) that `canonicalize()` emits,
+/// so paths handed to the agent are plain `C:\...` that other tools accept. UNC
+/// verbatim paths (`\\?\UNC\...`) are left alone. No-op on non-Windows.
+pub fn simplify(p: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(s) = p.to_str() {
+            if let Some(rest) = s.strip_prefix(r"\\?\") {
+                if !rest.starts_with("UNC\\") {
+                    return PathBuf::from(rest);
+                }
+            }
+        }
+    }
+    p
 }
 
 /// The whole dual-pane app: two panes and which one is active.
