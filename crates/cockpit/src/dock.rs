@@ -17,6 +17,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
+/// How many lines of scrollback the dock keeps.
+const SCROLLBACK_LEN: usize = 5000;
+
 pub struct Dock {
     parser: Arc<Mutex<vt100::Parser>>,
     writer: Box<dyn Write + Send>,
@@ -24,6 +27,8 @@ pub struct Dock {
     child: Box<dyn Child + Send + Sync>,
     alive: Arc<AtomicBool>,
     size: (u16, u16),
+    /// Rows scrolled back from the live bottom (0 == following output).
+    scroll: usize,
     /// The command running in the dock (shown in the title/status).
     pub program: String,
 }
@@ -69,7 +74,7 @@ impl Dock {
 
         let reader = pair.master.try_clone_reader().context("clone pty reader")?;
         let writer = pair.master.take_writer().context("take pty writer")?;
-        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN)));
         let alive = Arc::new(AtomicBool::new(true));
 
         // Pump PTY output into the parser until EOF.
@@ -100,6 +105,7 @@ impl Dock {
             child,
             alive,
             size: (rows, cols),
+            scroll: 0,
             program: label.to_string(),
         })
     }
@@ -129,6 +135,26 @@ impl Dock {
         let _ = self.writer.flush();
     }
 
+    /// Scroll the view up/down by half a page through the scrollback buffer.
+    pub fn scroll_page_up(&mut self) {
+        let page = (self.size.0 as usize / 2).max(1);
+        self.scroll = (self.scroll + page).min(SCROLLBACK_LEN);
+    }
+
+    pub fn scroll_page_down(&mut self) {
+        let page = (self.size.0 as usize / 2).max(1);
+        self.scroll = self.scroll.saturating_sub(page);
+    }
+
+    /// Jump back to the live bottom (called on input, like a real terminal).
+    pub fn scroll_reset(&mut self) {
+        self.scroll = 0;
+    }
+
+    pub fn is_scrolled(&self) -> bool {
+        self.scroll > 0
+    }
+
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Relaxed)
     }
@@ -140,7 +166,8 @@ impl Dock {
     /// Render the current terminal screen into `area`. Returns the absolute
     /// cursor position if it should be drawn.
     pub fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
-        let guard = self.parser.lock().ok()?;
+        let mut guard = self.parser.lock().ok()?;
+        guard.set_scrollback(self.scroll);
         let screen = guard.screen();
         for row in 0..area.height {
             for col in 0..area.width {

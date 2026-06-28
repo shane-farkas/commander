@@ -209,8 +209,17 @@ fn handle_key(key: KeyEvent, app: &mut App) -> bool {
 
     match app.focus {
         Focus::Dock => {
-            if let Some(bytes) = key_to_bytes(key) {
-                app.dock.send(&bytes);
+            let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+            match key.code {
+                KeyCode::PageUp if shift => app.dock.scroll_page_up(),
+                KeyCode::PageDown if shift => app.dock.scroll_page_down(),
+                _ => {
+                    // Any other key snaps back to the live bottom, then forwards.
+                    app.dock.scroll_reset();
+                    if let Some(bytes) = key_to_bytes(key) {
+                        app.dock.send(&bytes);
+                    }
+                }
             }
         }
         Focus::Tree => match key.code {
@@ -399,8 +408,10 @@ fn draw(f: &mut Frame, app: &mut App) {
             format!("Ctrl-O dock · Space mark · {sel} · Backspace up · q quit · dock: {}{}", app.dock.program, exited)
         }
         Focus::Dock => format!(
-            "Ctrl-O tree · Ctrl-Q quit · keys → {}{}",
-            app.dock.program, exited
+            "Ctrl-O tree · Ctrl-Q quit · Shift-PgUp/PgDn scroll{} · keys → {}{}",
+            if app.dock.is_scrolled() { " [SCROLLED]" } else { "" },
+            app.dock.program,
+            exited
         ),
     };
     f.render_widget(
