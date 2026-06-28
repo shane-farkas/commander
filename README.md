@@ -1,37 +1,21 @@
 # Commander
 
-A Midnight Commander–style dual-pane file picker for terminal coding agents
-([Claude Code](https://code.claude.com), [OpenAI Codex](https://developers.openai.com/codex),
-and [Grok Build](https://x.ai/cli)). You browse and mark files in a real terminal
+A Midnight Commander–style dual-pane file picker for terminal coding agents —
+[Claude Code](https://code.claude.com), [OpenAI Codex](https://developers.openai.com/codex),
+and [Grok Build](https://x.ai/cli). You browse and mark files in a real terminal
 TUI; your selection — and an optional action like *review* or *explain* — flows
 straight back into the agent's context.
 
 It's a small Rust binary that exposes an MCP server plus a `SKILL.md` — the two
-primitives these agents share — so the **same binary** works across hosts; only
-the registration differs.
-
-## Supported hosts
-
-| Host | Status | Install |
-|------|--------|---------|
-| Claude Code | primary, used daily | [below](#install) |
-| OpenAI Codex | port provided | [plugins/codex](plugins/codex/README.md) |
-| Grok Build (xAI) | port provided | [plugins/grok](plugins/grok/README.md) |
-
-> Status: early. The select→context loop works and is pleasant to use daily on
-> Claude Code. The Codex and Grok ports share the identical binary and skill; the
-> registration is documented per host. File operations and richer features are
-> still ahead — see [Roadmap](#roadmap).
-
-## Demo
+primitives these agents share — so the **same binary** works across all three
+hosts; only the one-time registration differs.
 
 ```
-/commander:open
+mark files with Space  →  press a / r / e  →  paths land in the agent's context
 ```
 
-Opens the picker in a new terminal window. Mark files with **Space**, then press
-**a** (send), **r** (review), or **e** (explain). The picks land back in Claude's
-context and it acts on them.
+> Status: early. The select→context loop works and is pleasant to use daily.
+> File operations and richer features are still ahead — see [Roadmap](#roadmap).
 
 ## Why a separate window?
 
@@ -44,14 +28,7 @@ where the UI is drawn.
 
 ## Install
 
-**Prerequisites**
-
-- [Rust](https://rustup.rs) (stable). On Windows you also need the MSVC linker
-  (Visual Studio Build Tools with the *C++ build tools* workload).
-- Claude Code.
-
-**1. Build and install the binary** (puts `commander` on your `PATH` via
-`~/.cargo/bin`):
+### Step 1 — build the binary (all hosts)
 
 ```sh
 git clone https://github.com/shane-farkas/commander
@@ -59,7 +36,17 @@ cd commander
 cargo install --path .
 ```
 
-**2. Add this repo as a plugin marketplace and install the plugin:**
+This puts `commander` on your `PATH` via `~/.cargo/bin`.
+
+**Prerequisites:** [Rust](https://rustup.rs) (stable). On Windows you also need
+the MSVC linker — Visual Studio Build Tools with the *C++ build tools* workload.
+
+### Step 2 — register with your host
+
+Pick your agent below. Each step registers the MCP server and installs the skill.
+
+<details open>
+<summary><b>Claude Code</b></summary>
 
 ```
 /plugin marketplace add ./commander
@@ -69,18 +56,71 @@ cargo install --path .
 (Or via the CLI: `claude plugin marketplace add ./commander` then
 `claude plugin install commander@commander`.)
 
-**3. Restart Claude Code**, then verify the MCP server connected:
+Restart Claude Code, then verify with `/mcp` — you should see **commander** with
+two tools. Invoke with `/commander:open [directory]`, or just ask in natural
+language.
+</details>
 
-```
-/mcp
+<details>
+<summary><b>OpenAI Codex</b></summary>
+
+Register the MCP server:
+
+```sh
+codex mcp add commander -- commander mcp
 ```
 
-You should see **commander** with two tools. Now try `/commander:open`.
+…or merge this into `~/.codex/config.toml` (global) or `.codex/config.toml`
+(per-project). `tool_timeout_sec` is generous on purpose — `commander_open`
+blocks while you pick files:
+
+```toml
+[mcp_servers.commander]
+command = "commander"
+args = ["mcp"]
+startup_timeout_sec = 20
+tool_timeout_sec = 600
+```
+
+Install the skill:
+
+```sh
+mkdir -p ~/.codex/skills/commander
+cp plugins/codex/skills/commander/SKILL.md ~/.codex/skills/commander/
+```
+
+Start Codex, confirm the server's tools appear, then ask to "pick some files."
+</details>
+
+<details>
+<summary><b>Grok Build (xAI)</b></summary>
+
+Register the MCP server:
+
+```sh
+grok mcp add commander -t stdio -c commander -a mcp
+grok mcp list            # confirm it registered
+```
+
+Install the skill (Grok recognizes the Anthropic `SKILL.md` format):
+
+```sh
+mkdir -p ~/.grok/skills/commander
+cp plugins/grok/skills/commander/SKILL.md ~/.grok/skills/commander/
+```
+
+Run `grok inspect` to confirm the skill and MCP server loaded, then ask to "pick
+some files."
+
+> Grok Build is early beta — its config layout is still moving, so the `grok mcp`
+> commands above (which abstract the on-disk path) are the most durable route.
+> Grok Build can also read an existing Claude Code `.mcp.json` directly.
+</details>
 
 ## Usage
 
-Invoke it explicitly with `/commander:open [directory]`, or just ask in natural
-language ("let me pick some files") — the skill triggers on its own.
+Ask in natural language ("let me pick some files") and the skill triggers on its
+own, or — in Claude Code — invoke `/commander:open [directory]` explicitly.
 
 `commander_open` **blocks until you confirm or cancel** and returns the selection
 directly, so there's no second step in the normal flow.
@@ -113,12 +153,12 @@ If nothing is marked, the item under the cursor is sent.
         └─────────────────────────────────────────────┘
               ▲                              ▲
               │ human keys                   │ agent tool calls
-        new terminal window               Claude Code
+        new terminal window        Claude Code · Codex · Grok Build
 ```
 
 - `commander tui [DIR]` — the interactive dual-pane picker.
 - `commander mcp` — a stdio MCP server (hand-rolled JSON-RPC, no SDK dependency)
-  that Claude Code launches.
+  that the host launches.
 - The two share a per-user **session file** (`selection.json` under your local
   app-data dir). `commander_open` clears it, spawns the TUI, and blocks polling
   for the confirmed selection; the TUI writes it (or a "cancelled" marker) on
@@ -136,16 +176,16 @@ commander/
 │  └─ mcp/            # hand-rolled stdio JSON-RPC MCP server
 └─ plugins/
    ├─ claude-code/    # plugin.json + .mcp.json + /commander:open + SKILL.md
-   ├─ codex/          # config.toml (mcp_servers) + SKILL.md + install README
-   └─ grok/           # grok mcp add + SKILL.md + install README
+   ├─ codex/          # config.toml (mcp_servers) + SKILL.md
+   └─ grok/           # SKILL.md (registered via `grok mcp add`)
 ```
 
 ## MCP tools
 
 - `commander_open(path?)` — open the picker and block until the user confirms;
   returns `{ cwd, paths, action }`.
-- `commander_get_selection(clear?)` — fallback to read the last selection (only
-  needed if `commander_open` times out).
+- `commander_get_selection(clear?)` — fallback for reading the last selection
+  (only needed if `commander_open` times out).
 
 ## Configuration
 
@@ -155,7 +195,7 @@ commander/
 ## Roadmap
 
 - File operations (copy / move / delete / view / mkdir).
-- Agent-driven navigation (the agent moves the panes; live socket transport —
+- Agent-driven navigation (the agent moves the panes via a live socket transport;
   the `NavCommand` types are already defined).
 - Inline picker via `tmux split-window` when run inside tmux (instead of a
   separate window).
@@ -171,9 +211,9 @@ cargo test          # unit tests (core, ipc)
 cargo run -- tui .  # run the picker standalone
 ```
 
-After changing the binary, re-run `cargo install --path .`. Note: the running
-MCP server locks `commander.exe` on Windows — stop it (or restart Claude Code)
-before reinstalling. After changing plugin files, bump the version in
+After changing the binary, re-run `cargo install --path .`. Note: a running MCP
+server locks `commander.exe` on Windows — stop it (or restart your host) before
+reinstalling. After changing Claude Code plugin files, bump the version in
 `plugins/claude-code/.claude-plugin/plugin.json` and reinstall the plugin so the
 cached copy refreshes.
 
