@@ -1,0 +1,16 @@
+[package]
+name = "commander-cockpit"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+description = "Standalone Commander workbench: a file tree beside a docked coding agent."
+
+[[bin]]
+name = "cockpit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+commander-core = { workspace = true }

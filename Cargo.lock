@@ -51,6 +51,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "commander-cockpit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "commander-core",
+ "crossterm",
+ "ratatui",
+]
+
+[[package]]
 name = "commander-core"
 version = "0.1.0"
 dependencies = [

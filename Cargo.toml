@@ -11,7 +11,7 @@ name = "commander"
 path = "src/main.rs"
 
 [workspace]
-members = ["crates/core", "crates/ipc", "crates/tui", "crates/mcp"]
+members = ["crates/core", "crates/ipc", "crates/tui", "crates/mcp", "crates/cockpit"]
 
 [workspace.package]
 edition = "2021"
